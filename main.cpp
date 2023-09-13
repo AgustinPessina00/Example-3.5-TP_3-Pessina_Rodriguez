@@ -2,7 +2,7 @@
 
 #include "mbed.h"
 #include "arm_book_lib.h"
-
+#include <string>
 //=====[Defines]===============================================================
 
 #define NUMBER_OF_KEYS                           4
@@ -29,9 +29,42 @@ DigitalOut systemBlockedLed(LED2);
 
 DigitalInOut sirenPin(PE_10);
 
+/*
+====================Clase UnbufferedSerial.h (resolución 6.c.i)====================
+Objeto: uartUsb (instancia de UnbufferedSerial)
+Métodos utilizados: -Constructor: Recibe como parámetro el pin TX (PD_8 - obtenido en PinNames.h), el pin RX (PD_9 - obtenido en PinNames.h) y el baudrate
+                                  (por defecto vale MBED_CONF_PLATFORM_DEFAULT_SERIAL_BAUD_RATE = 9600)
+                    -readable(): Determina si hay un caracter valido para leer. Si lo hay devuelve 1/true;
+                    -read(void *buffer, size_t size): lee la cantidad de bytes size que hay en buffer
+                    -write(const void *buffer, size_t size): escribe desde buffer la cantidad de bytes size.
+Clase: UnbufferedSerial
+Herencia: UnbufferedSerial hereda de SerialBase, FileHandle y NonCopyable<UnbufferedSerial>
+Interfaces: FileHandle posee un método virtual puro, por lo que esa clase sería una interfaz de UnbufferedSerial
+Contructor: UnbufferedSerial(PinName tx, PinName rx, int baud = MBED_CONF_PLATFORM_DEFAULT_SERIAL_BAUD_RATE);
+Sobrecarga: Constructor tiene sobrecarga (Hay 3 constructores):
+            -UnbufferedSerial(PinName tx, PinName rx, int baud = MBED_CONF_PLATFORM_DEFAULT_SERIAL_BAUD_RATE);
+            -UnbufferedSerial(const serial_pinmap_t &static_pinmap, int baud = MBED_CONF_PLATFORM_DEFAULT_SERIAL_BAUD_RATE);
+*/
 UnbufferedSerial uartUsb(USBTX, USBRX, 115200);
 
-AnalogIn potentiometer(A0);
+/*
+====================Clase AnalogIn (resolución 6.b.i)====================
+Objeto: potentiometer, lm35 (son instancias de AnalogIn)
+Métodos utilizados: -Constructor: Recibe como parámetro el pin que desea asociar a la instancia.
+                    -read(): Lee una tensión a la entrada del pin. Devuelve un float que varía entre 0 y 1.
+                             Siendo 0.0 0V y 1.0 3.3V (sería un porcentaje de la tensión de referencia del ADC).
+Clase: AnalogIn
+Herencia: No hay. Ni otras clases heredan de ella ni ella hereda de otras clases.
+Interfaces: No aplica.
+Contructor: AnalogIn(PinName pin, float vref = MBED_CONF_TARGET_DEFAULT_ADC_VREF); Recibe el pin que se desea definir como entrada analógica,
+            y además una tensión de referencia. En este caso se usa la definida por defecto (MBED_CONF_TARGET_DEFAULT_ADC_VREF==NaN).
+Sobrecarga: Constructor tiene sobrecarga (Hay 3 constructores):
+            -AnalogIn(const PinMap &pinmap, float vref = MBED_CONF_TARGET_DEFAULT_ADC_VREF);
+            -AnalogIn(const PinMap &&, float vref = MBED_CONF_TARGET_DEFAULT_ADC_VREF) = delete;
+            -AnalogIn(PinName pin, float vref = MBED_CONF_TARGET_DEFAULT_ADC_VREF);
+            operator float(): Se puede usar como un shortcut para read(). Ej: (potentiometer.read() > 0.5) = (potentiometer > 0.5)
+*/
+AnalogIn potentiometer(A0);    
 AnalogIn lm35(A1);
 
 //=====[Declaration and initialization of public global variables]=============
@@ -73,12 +106,13 @@ float analogReadingScaledWithTheLM35Formula( float analogReading );
 
 int main()
 {
-    inputsInit();
-    outputsInit();
+    inputsInit();       //inicializa las entradas (algunas como pulldown, opendrain)
+    outputsInit();      //inicializa en estado bajo las salidas
     while (true) {
-        alarmActivationUpdate();
-        alarmDeactivationUpdate();
-        uartTask();
+        alarmActivationUpdate();    //realiza una lectura de temperatura y detector de gas y dispara la alarma si supera los limites definidos.
+                                    //apretando el test button también se dispara la alarma.
+        alarmDeactivationUpdate();  //ingresando el codigo correcto desactiva la alarma, si ingresa 5 veces mal el codigo se bloquea
+        uartTask();                 //Ejecuta el menú de la aplicación, mediante una interfaz por puerto serie realizando distintas funcionalidades
         delay(TIME_INCREMENT_MS);
     }
 }
@@ -93,6 +127,7 @@ void inputsInit()
     cButton.mode(PullDown);
     dButton.mode(PullDown);
     sirenPin.mode(OpenDrain);
+    mq2.mode(PullDown); //Lo agregamos ya que no tenemos el divisor resistivo y estamos usando un switch.
     sirenPin.input();
 }
 
@@ -300,7 +335,7 @@ void uartTask()
  
         case 'p':
         case 'P':
-            potentiometerReading = potentiometer.read();
+            potentiometerReading = potentiometer.read();    
             sprintf ( str, "Potentiometer: %.2f\r\n", potentiometerReading );
             stringLength = strlen(str);
             uartUsb.write( str, stringLength );

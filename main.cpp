@@ -12,7 +12,31 @@
 #define NUMBER_OF_AVG_SAMPLES                   100
 #define OVER_TEMP_LEVEL                         50
 #define TIME_INCREMENT_MS                       10
+#define MODIFICACIONES_BUSIN_BUSOUT
+#define ALARM_TEST_BUTTON D2
+#define A_BUTTON D4
+#define B_BUTTON D5
+#define C_BUTTON D6
+#define D_BUTTON D7
+#define MQ2 PE_12
+#define SIREN PE_10
 
+#define ALARM_TEST_BUTTON_POSITION 0
+#define A_BUTTON_POSITION 1
+#define B_BUTTON_POSITION 2
+#define C_BUTTON_POSITION 3
+#define D_BUTTON_POSITION 4
+#define MQ2_POSITION 5
+#define SIREN_POSITION 0
+
+#define ALARM_LED LED1
+#define SYSTEM_BLOCKED_LED LED2
+#define INCORRECT_CODE_LED LED3
+#define ALARM_LED_POSITION 0
+#define SYSTEM_BLOCKED_LED_POSITION 1
+#define INCORRECT_CODE_LED_POSITION 2
+
+#ifdef ORIGINAL_DIGITALIN_DIGITALOUT
 //=====[Declaration and initialization of public global objects]===============
 
 DigitalIn enterButton(BUTTON1);
@@ -28,6 +52,17 @@ DigitalOut incorrectCodeLed(LED3);
 DigitalOut systemBlockedLed(LED2);
 
 DigitalInOut sirenPin(PE_10);
+#endif
+
+#ifdef MODIFICACIONES_BUSIN_BUSOUT
+//=====[Declaration and initialization of public global objects]===============
+
+BusIn inputs(ALARM_TEST_BUTTON, A_BUTTON, B_BUTTON, C_BUTTON, D_BUTTON, MQ2);
+BusIn enterButton(BUTTON1);
+BusOut leds(ALARM_LED, SYSTEM_BLOCKED_LED, INCORRECT_CODE_LED);
+
+BusInOut sirenPin(SIREN);
+#endif
 
 /*
 ====================Clase UnbufferedSerial.h (resolución 6.c.i)====================
@@ -118,9 +153,9 @@ int main()
 }
 
 //=====[Implementations of public functions]===================================
-
 void inputsInit()
 {
+#ifdef ORIGINAL_DIGITALIN_DIGITALOUT
     alarmTestButton.mode(PullDown);
     aButton.mode(PullDown);
     bButton.mode(PullDown);
@@ -129,14 +164,28 @@ void inputsInit()
     sirenPin.mode(OpenDrain);
     mq2.mode(PullDown); //Lo agregamos ya que no tenemos el divisor resistivo y estamos usando un switch.
     sirenPin.input();
+#endif
+
+#ifdef MODIFICACIONES_BUSIN_BUSOUT
+    inputs.mode(PullDown);
+    sirenPin.mode(OpenDrain);
+    sirenPin.input();
+#endif
 }
 
 void outputsInit()
 {
+#ifdef ORIGINAL_DIGITALIN_DIGITALOUT
     alarmLed = OFF;
     incorrectCodeLed = OFF;
     systemBlockedLed = OFF;
+#endif
+
+#ifdef MODIFICACIONES_BUSIN_BUSOUT
+    leds.write(OFF);
+#endif
 }
+
 
 void alarmActivationUpdate()
 {
@@ -161,7 +210,7 @@ void alarmActivationUpdate()
     } else {
         overTempDetector = OFF;
     }
-
+#ifdef ORIGINAL_DIGITALIN_DIGITALOUT
     if( !mq2) {
         gasDetectorState = ON;
         alarmState = ON;
@@ -202,10 +251,55 @@ void alarmActivationUpdate()
         overTempDetectorState = OFF;
         sirenPin.input();                                  
     }
+#endif
+
+#ifdef MODIFICACIONES_BUSIN_BUSOUT
+    if(!inputs[MQ2_POSITION]) {
+            gasDetectorState = ON;
+            alarmState = ON;
+        }
+        if( overTempDetector ) {
+            overTempDetectorState = ON;
+            alarmState = ON;
+        }
+        if( inputs[ALARM_TEST_BUTTON_POSITION] ) {             
+            overTempDetectorState = ON;
+            gasDetectorState = ON;
+            alarmState = ON;
+        }    
+        if( alarmState ) { 
+            accumulatedTimeAlarm = accumulatedTimeAlarm + TIME_INCREMENT_MS;
+            sirenPin.output();                                     
+            sirenPin[SIREN_POSITION] = LOW;                                        
+
+            if( gasDetectorState && overTempDetectorState ) {
+                if( accumulatedTimeAlarm >= BLINKING_TIME_GAS_AND_OVER_TEMP_ALARM ) {
+                    accumulatedTimeAlarm = 0;
+                    leds[ALARM_LED_POSITION] = !leds[ALARM_LED_POSITION];
+                }
+            } else if( gasDetectorState ) {
+                if( accumulatedTimeAlarm >= BLINKING_TIME_GAS_ALARM ) {
+                    accumulatedTimeAlarm = 0;
+                    leds[ALARM_LED_POSITION] = !leds[ALARM_LED_POSITION];
+                }
+            } else if ( overTempDetectorState ) {
+                if( accumulatedTimeAlarm >= BLINKING_TIME_OVER_TEMP_ALARM  ) {
+                    accumulatedTimeAlarm = 0;
+                    leds[ALARM_LED_POSITION] = !leds[ALARM_LED_POSITION];
+                }
+            }
+        } else{
+            leds[ALARM_LED_POSITION] = OFF;
+            gasDetectorState = OFF;
+            overTempDetectorState = OFF;
+            sirenPin.input();                                  
+        }   
+#endif
 }
 
 void alarmDeactivationUpdate()
 {
+#ifdef ORIGINAL_DIGITALIN_DIGITALOUT
     if ( numberOfIncorrectCodes < 5 ) {
         if ( aButton && bButton && cButton && dButton && !enterButton ) {
             incorrectCodeLed = OFF;
@@ -226,7 +320,32 @@ void alarmDeactivationUpdate()
     } else {
         systemBlockedLed = ON;
     }
+#endif
+
+#ifdef MODIFICACIONES_BUSIN_BUSOUT
+    if ( numberOfIncorrectCodes < 5 ) {
+            if ( inputs[A_BUTTON_POSITION] && inputs[B_BUTTON_POSITION] && inputs[C_BUTTON_POSITION] && inputs[D_BUTTON_POSITION] && !enterButton[0] ) {
+                leds[INCORRECT_CODE_LED_POSITION] = OFF;
+            }
+            if ( enterButton[0] && !leds[INCORRECT_CODE_LED_POSITION] && alarmState ) {
+                buttonsPressed[0] = inputs[A_BUTTON_POSITION];
+                buttonsPressed[1] = inputs[B_BUTTON_POSITION];
+                buttonsPressed[2] = inputs[C_BUTTON_POSITION];
+                buttonsPressed[3] = inputs[D_BUTTON_POSITION];
+                if ( areEqual() ) {
+                    alarmState = OFF;
+                    numberOfIncorrectCodes = 0;
+                } else {
+                    leds[INCORRECT_CODE_LED_POSITION] = OFF;
+                    numberOfIncorrectCodes++;
+                }
+            }
+        } else {
+            leds[SYSTEM_BLOCKED_LED_POSITION] = ON;
+        }
+#endif
 }
+
 
 void uartTask()
 {
@@ -243,13 +362,21 @@ void uartTask()
                 uartUsb.write( "The alarm is not activated\r\n", 28);
             }
             break;
-
         case '2':
+#ifdef ORIGINAL_DIGITALIN_DIGITALOUT
             if ( !mq2 ) {
                 uartUsb.write( "Gas is being detected\r\n", 22);
             } else {
                 uartUsb.write( "Gas is not being detected\r\n", 27);
             }
+#endif
+#ifdef MODIFICADO_BUSIN_BUSOUT
+            if(!inputs[MQ2_POSITION]) {
+                uartUsb.write( "Gas is being detected\r\n", 22);
+            } else {
+                uartUsb.write( "Gas is not being detected\r\n", 27);
+            }
+#endif
             break;
 
         case '3':
@@ -296,11 +423,22 @@ void uartTask()
             if ( incorrectCode == false ) {
                 uartUsb.write( "\r\nThe code is correct\r\n\r\n", 25 );
                 alarmState = OFF;
+#ifdef ORIGINAL_DIGITALIN_DIGITALOUT
                 incorrectCodeLed = OFF;
+#endif
+#ifdef MODIFICADO_BUSIN_BUSOUT
+                leds[INCORRECT_CODE_LED_POSITION] = OFF;
+#endif
                 numberOfIncorrectCodes = 0;
+
             } else {
                 uartUsb.write( "\r\nThe code is incorrect\r\n\r\n", 27 );
+#ifdef ORIGINAL_DIGITALIN_DIGITALOUT
                 incorrectCodeLed = ON;
+#endif
+#ifdef MODIFICADO_BUSIN_BUSOUT
+                leds[INCORRECT_CODE_LED_POSITION] = ON;
+#endif
                 numberOfIncorrectCodes++;
             }                
             break;
